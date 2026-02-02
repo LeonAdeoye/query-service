@@ -1,0 +1,21 @@
+package com.queryservice.error
+
+object ErrorCodes {
+    const val INVALID_QUERY_REQUEST = "QRS-ERR-001"
+    const val DATABASE_CONNECTION_FAILURE = "QRS-ERR-002"
+    const val QUERY_EXECUTION_TIMEOUT = "QRS-ERR-003"
+    const val INVALID_PARAMETERS = "QRS-ERR-004"
+    const val QUERY_NOT_FOUND = "QRS-ERR-005"
+    const val DATABASE_TYPE_NOT_SUPPORTED = "QRS-ERR-006"
+    const val SQL_EXECUTION_ERROR = "QRS-ERR-007"
+    const val CACHE_ERROR = "QRS-ERR-008"
+    const val RETRY_EXHAUSTED = "QRS-ERR-009"
+    const val QUEUE_FULL = "QRS-ERR-010"
+    const val FILE_EXPORT_ERROR = "QRS-ERR-011"
+    const val STREAMING_ERROR = "QRS-ERR-012"
+    const val JSON_TRANSFORMATION_ERROR = "QRS-ERR-013"
+    const val PARAMETER_VALIDATION_ERROR = "QRS-ERR-014"
+    const val CONNECTION_POOL_EXHAUSTED = "QRS-ERR-015"
+    const val UNKNOWN_ERROR = "QRS-ERR-568"
+}
+
