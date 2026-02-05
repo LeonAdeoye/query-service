@@ -119,14 +119,16 @@ class QueryService(
         timer.startQueryExecution()
         
         val result = runBlocking {
-            retryService.executeWithRetry {
-                asyncQueryExecutor.executeQueryAsync(
-                    request.sql,
-                    request.databaseType,
-                    request.parameters,
-                    timer
-                )
-            }
+            retryService.executeWithRetry(
+                operation = {
+                    asyncQueryExecutor.executeQueryAsync(
+                        request.sql,
+                        request.databaseType,
+                        request.parameters,
+                        timer
+                    )
+                }
+            )
         }
         
         timer.startJsonTransform()
@@ -152,14 +154,19 @@ class QueryService(
         timer.startQueryExecution()
         
         val fileUrl = runBlocking {
-            retryService.executeWithRetry {
-                bigDataQueryExecutor.executeBigDataQuery(
-                    request.sql,
-                    request.databaseType,
-                    request.parameters,
-                    request.exportFormat ?: ExportFormat.CSV
-                )
-            }
+            retryService.executeWithRetry(
+                operation = {
+                    val exportFormat = request.exportFormat?.let { 
+                        com.queryservice.export.ExportFormat.valueOf(it.name)
+                    } ?: com.queryservice.export.ExportFormat.CSV
+                    bigDataQueryExecutor.executeBigDataQuery(
+                        request.sql,
+                        request.databaseType,
+                        request.parameters,
+                        exportFormat
+                    )
+                }
+            )
         }
         
         timer.endQueryExecution()

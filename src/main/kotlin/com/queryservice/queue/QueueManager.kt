@@ -4,11 +4,12 @@ import com.queryservice.database.DatabaseType
 import com.queryservice.execution.AsyncQueryExecutor
 import com.queryservice.monitoring.ExecutionTimer
 import kotlinx.coroutines.*
+import kotlinx.coroutines.currentCoroutineContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.util.UUID
-import javax.annotation.PostConstruct
-import javax.annotation.PreDestroy
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
 
 @Component
 class QueueManager(
@@ -61,7 +62,7 @@ class QueueManager(
     }
     
     private suspend fun processQueue(priority: QueryPriority) {
-        while (isActive) {
+        while (currentCoroutineContext().isActive) {
             try {
                 val queuedQuery = priorityQueryQueue.dequeue()
                 if (queuedQuery != null && queuedQuery.priority == priority) {

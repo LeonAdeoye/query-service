@@ -26,7 +26,7 @@ class DatabaseConfig(
     private val databaseConfigProperties: DatabaseConfigProperties
 ) {
     
-    @Bean(name = "oracleDataSource")
+    @Bean("oracleDataSource")
     fun oracleDataSource(): HikariDataSource {
         val config = HikariConfig().apply {
             jdbcUrl = databaseConfigProperties.oracle.jdbcUrl
@@ -43,7 +43,7 @@ class DatabaseConfig(
         return HikariDataSource(config)
     }
     
-    @Bean(name = "mssqlDataSource")
+    @Bean("mssqlDataSource")
     fun mssqlDataSource(): HikariDataSource {
         val config = HikariConfig().apply {
             jdbcUrl = databaseConfigProperties.mssql.jdbcUrl
