@@ -3,9 +3,11 @@ package com.queryservice.retry
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.ErrorCodeRegistry
 import com.queryservice.error.QueryServiceException
-import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import reactor.core.publisher.Mono
+import reactor.util.retry.Retry
+import java.time.Duration
 
 @Service
 class RetryService(
@@ -14,49 +16,39 @@ class RetryService(
     private val errorCodeRegistry: ErrorCodeRegistry
 ) {
     private val logger = LoggerFactory.getLogger(RetryService::class.java)
-    
-    suspend fun <T> executeWithRetry(
-        operation: suspend () -> T,
+
+    /**
+     * Non-blocking retry using Project Reactor's Retry.backoff.
+     */
+    fun <T> executeWithRetry(
+        operation: Mono<T>,
         operationName: String = "operation"
-    ): T {
+    ): Mono<T> {
         if (!retryConfig.enabled) {
-            return operation()
+            return operation
         }
-        
-        var lastException: Throwable? = null
-        var currentInterval = retryConfig.initialIntervalMs
-        
-        for (attempt in 1..retryConfig.maxAttempts) {
-            try {
-                return operation()
-            } catch (e: Throwable) {
-                lastException = e
-                
-                if (!retryPolicy.isRetryable(e) || attempt >= retryConfig.maxAttempts) {
-                    if (attempt >= retryConfig.maxAttempts) {
-                        errorCodeRegistry.logError(
-                            ErrorCodes.RETRY_EXHAUSTED,
-                            "Retry exhausted after $attempt attempts for $operationName",
-                            e
-                        )
-                    }
-                    throw e
-                }
-                
-                logger.warn("Attempt $attempt failed for $operationName, retrying in ${currentInterval}ms", e)
-                delay(currentInterval)
-                currentInterval = minOf(
-                    (currentInterval * retryConfig.multiplier).toLong(),
-                    retryConfig.maxIntervalMs
+        val retrySpec = Retry.backoff(retryConfig.maxAttempts.toLong(), Duration.ofMillis(retryConfig.initialIntervalMs))
+            .maxBackoff(Duration.ofMillis(retryConfig.maxIntervalMs))
+            .filter { throwable: Throwable -> retryPolicy.isRetryable(throwable) }
+            .doBeforeRetry { signal ->
+                logger.warn(
+                    "Attempt ${signal.totalRetries() + 1} failed for $operationName, retrying",
+                    signal.failure()
                 )
             }
-        }
-        
-        throw QueryServiceException(
-            ErrorCodes.RETRY_EXHAUSTED,
-            "Retry exhausted for $operationName",
-            lastException
-        )
+            .onRetryExhaustedThrow { _: reactor.util.retry.RetryBackoffSpec, signal: Retry.RetrySignal ->
+                errorCodeRegistry.logError(
+                    ErrorCodes.RETRY_EXHAUSTED,
+                    "Retry exhausted after ${signal.totalRetries()} attempts for $operationName",
+                    signal.failure()
+                )
+                QueryServiceException(
+                    ErrorCodes.RETRY_EXHAUSTED,
+                    "Retry exhausted for $operationName",
+                    signal.failure()
+                )
+            }
+        return operation.retryWhen(retrySpec)
     }
 }
 

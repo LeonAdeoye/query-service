@@ -2,8 +2,6 @@ package com.queryservice.execution
 
 import com.queryservice.database.DatabaseType
 import com.queryservice.monitoring.ExecutionTimer
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Component
 import reactor.core.publisher.Mono
 
@@ -11,24 +9,12 @@ import reactor.core.publisher.Mono
 class AsyncQueryExecutor(
     private val queryExecutor: QueryExecutor
 ) {
-    
-    suspend fun executeQueryAsync(
-        sql: String,
-        databaseType: DatabaseType,
-        parameters: Map<String, Any>?,
-        timer: ExecutionTimer
-    ): List<Map<String, Any>> {
-        return withContext(Dispatchers.IO) {
-            timer.startQueryExecution()
-            try {
-                queryExecutor.executeQuery(sql, databaseType, parameters)
-            } finally {
-                timer.endQueryExecution()
-            }
-        }
-    }
-    
-    fun executeQueryReactive(
+
+    /**
+     * Non-blocking query execution using Project Reactor.
+     * Subscribe on boundedElastic to avoid blocking the reactive thread pool.
+     */
+    fun executeQueryAsync(
         sql: String,
         databaseType: DatabaseType,
         parameters: Map<String, Any>?,

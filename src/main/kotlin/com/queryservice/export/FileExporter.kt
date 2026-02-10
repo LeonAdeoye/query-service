@@ -35,44 +35,46 @@ class FileExporter(
         logger.info("Export directory: $exportDir")
     }
     
-    suspend fun exportToFile(
+    /**
+     * Non-blocking export: returns Mono that completes with the file path when done.
+     * Runs on boundedElastic to avoid blocking the reactive thread pool.
+     */
+    fun exportToFile(
         dataFlux: Flux<Map<String, Any>>,
         format: ExportFormat
-    ): String {
-        return try {
-            // Convert Flux to List using coroutines
-            val data = reactor.core.publisher.Mono.from(dataFlux.collectList())
-                .block() ?: emptyList()
-            val fileId = UUID.randomUUID().toString()
-            val fileName = when (format) {
-                ExportFormat.CSV -> "query_${fileId}.csv"
-                ExportFormat.JSON -> "query_${fileId}.json"
-                ExportFormat.EXCEL -> "query_${fileId}.xlsx"
+    ): reactor.core.publisher.Mono<String> {
+        return dataFlux.collectList()
+            .flatMap { data ->
+                reactor.core.publisher.Mono.fromCallable {
+                    val fileId = UUID.randomUUID().toString()
+                    val fileName = when (format) {
+                        ExportFormat.CSV -> "query_${fileId}.csv"
+                        ExportFormat.JSON -> "query_${fileId}.json"
+                        ExportFormat.EXCEL -> "query_${fileId}.xlsx"
+                    }
+                    val exportDir = if (tempDirectory.isNotEmpty()) {
+                        Paths.get(tempDirectory)
+                    } else {
+                        Paths.get(System.getProperty("java.io.tmpdir"), "query-service-exports")
+                    }
+                    val filePath = exportDir.resolve(fileName)
+                    when (format) {
+                        ExportFormat.CSV -> exportToCsv(data, filePath.toFile())
+                        ExportFormat.JSON -> exportToJson(data, filePath.toFile())
+                        ExportFormat.EXCEL -> exportToExcel(data, filePath.toFile())
+                    }
+                    logger.info("Exported ${data.size} rows to $filePath")
+                    filePath.toString()
+                }.subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                    .onErrorMap { e ->
+                        errorCodeRegistry.logError(ErrorCodes.FILE_EXPORT_ERROR, "Failed to export file", e)
+                        QueryServiceException(
+                            ErrorCodes.FILE_EXPORT_ERROR,
+                            "Failed to export file: ${e.message}",
+                            e
+                        )
+                    }
             }
-            
-            val exportDir = if (tempDirectory.isNotEmpty()) {
-                Paths.get(tempDirectory)
-            } else {
-                Paths.get(System.getProperty("java.io.tmpdir"), "query-service-exports")
-            }
-            val filePath = exportDir.resolve(fileName)
-            
-            when (format) {
-                ExportFormat.CSV -> exportToCsv(data, filePath.toFile())
-                ExportFormat.JSON -> exportToJson(data, filePath.toFile())
-                ExportFormat.EXCEL -> exportToExcel(data, filePath.toFile())
-            }
-            
-            logger.info("Exported ${data.size} rows to $filePath")
-            filePath.toString()
-        } catch (e: Exception) {
-            errorCodeRegistry.logError(ErrorCodes.FILE_EXPORT_ERROR, "Failed to export file", e)
-            throw QueryServiceException(
-                ErrorCodes.FILE_EXPORT_ERROR,
-                "Failed to export file: ${e.message}",
-                e
-            )
-        }
     }
     
     private fun exportToCsv(data: List<Map<String, Any>>, file: File) {

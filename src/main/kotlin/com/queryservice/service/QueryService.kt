@@ -21,7 +21,6 @@ import com.queryservice.repository.QueryRepository
 import com.queryservice.retry.RetryService
 import com.queryservice.tracking.QueryMetadata
 import com.queryservice.tracking.QuerySourceTracker
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
@@ -53,35 +52,30 @@ class QueryService(
         val timer = ExecutionTimer()
         
         return Mono.fromCallable {
-            // Validate parameters
             parameterValidator.validateParameters(request.sql, request.parameters)
             parameterValidator.validateParameterTypes(request.parameters)
-            
-            // Check cache if enabled
-            if (request.cacheEnabled) {
-                val cached = queryCacheService.get(request.sql, request.databaseType, request.parameters)
+            request
+        }.flatMap { req ->
+            if (req.cacheEnabled) {
+                val cached = queryCacheService.get(req.sql, req.databaseType, req.parameters)
                 if (cached != null) {
                     timer.endJsonTransform()
-                    return@fromCallable QueryResponseDTO(
-                        queryId = queryId,
-                        success = true,
-                        data = cached,
-                        rowCount = cached.size,
-                        executionDurationMs = 0,
-                        jsonTransformDurationMs = 0,
-                        totalDurationMs = timer.getTotalDurationMs()
+                    return@flatMap Mono.just(
+                        QueryResponseDTO(
+                            queryId = queryId,
+                            success = true,
+                            data = cached,
+                            rowCount = cached.size,
+                            executionDurationMs = 0,
+                            jsonTransformDurationMs = 0,
+                            totalDurationMs = timer.getTotalDurationMs()
+                        )
                     )
                 }
             }
-            
-            // Execute query
-            val result = if (request.bigData) {
-                executeBigDataQuery(request, queryId, timer)
-            } else {
-                executeRegularQuery(request, queryId, timer)
-            }
-            
-            // Cache result if enabled
+            if (req.bigData) executeBigDataQuery(req, queryId, timer)
+            else executeRegularQuery(req, queryId, timer)
+        }.flatMap { result ->
             if (request.cacheEnabled && result.data != null) {
                 queryCacheService.put(
                     request.sql,
@@ -91,8 +85,7 @@ class QueryService(
                     request.cacheTtlSeconds
                 )
             }
-            
-            result
+            Mono.just(result)
         }.subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
         .doOnSuccess { response ->
             queryMetricsCollector.logMetrics(queryId, metadata, timer, response.success)
@@ -115,73 +108,60 @@ class QueryService(
         request: QueryRequestDTO,
         queryId: String,
         timer: ExecutionTimer
-    ): QueryResponseDTO {
+    ): Mono<QueryResponseDTO> {
         timer.startQueryExecution()
-        
-        val result = runBlocking {
-            retryService.executeWithRetry(
-                operation = {
-                    asyncQueryExecutor.executeQueryAsync(
-                        request.sql,
-                        request.databaseType,
-                        request.parameters,
-                        timer
-                    )
-                }
+        return retryService.executeWithRetry(
+            asyncQueryExecutor.executeQueryAsync(
+                request.sql,
+                request.databaseType,
+                request.parameters,
+                timer
+            )
+        ).map { jsonResult ->
+            timer.startJsonTransform()
+            timer.endJsonTransform()
+            QueryResponseDTO(
+                queryId = queryId,
+                success = true,
+                data = jsonResult,
+                rowCount = jsonResult.size,
+                executionDurationMs = timer.getQueryExecutionDurationMs(),
+                jsonTransformDurationMs = timer.getJsonTransformDurationMs(),
+                totalDurationMs = timer.getTotalDurationMs()
             )
         }
-        
-        timer.startJsonTransform()
-        val jsonResult = result // Already in Map format
-        timer.endJsonTransform()
-        
-        return QueryResponseDTO(
-            queryId = queryId,
-            success = true,
-            data = jsonResult,
-            rowCount = jsonResult.size,
-            executionDurationMs = timer.getQueryExecutionDurationMs(),
-            jsonTransformDurationMs = timer.getJsonTransformDurationMs(),
-            totalDurationMs = timer.getTotalDurationMs()
-        )
     }
     
     private fun executeBigDataQuery(
         request: QueryRequestDTO,
         queryId: String,
         timer: ExecutionTimer
-    ): QueryResponseDTO {
+    ): Mono<QueryResponseDTO> {
         timer.startQueryExecution()
-        
-        val fileUrl = runBlocking {
-            retryService.executeWithRetry(
-                operation = {
-                    val exportFormat = request.exportFormat?.let { 
-                        com.queryservice.export.ExportFormat.valueOf(it.name)
-                    } ?: com.queryservice.export.ExportFormat.CSV
-                    bigDataQueryExecutor.executeBigDataQuery(
-                        request.sql,
-                        request.databaseType,
-                        request.parameters,
-                        exportFormat
-                    )
-                }
+        val exportFormat = request.exportFormat?.let {
+            com.queryservice.export.ExportFormat.valueOf(it.name)
+        } ?: com.queryservice.export.ExportFormat.CSV
+        return retryService.executeWithRetry(
+            bigDataQueryExecutor.executeBigDataQuery(
+                request.sql,
+                request.databaseType,
+                request.parameters,
+                exportFormat
+            )
+        ).map { fileUrl ->
+            timer.endQueryExecution()
+            timer.endJsonTransform()
+            QueryResponseDTO(
+                queryId = queryId,
+                success = true,
+                data = null,
+                rowCount = 0,
+                executionDurationMs = timer.getQueryExecutionDurationMs(),
+                jsonTransformDurationMs = timer.getJsonTransformDurationMs(),
+                totalDurationMs = timer.getTotalDurationMs(),
+                fileUrl = fileUrl
             )
         }
-        
-        timer.endQueryExecution()
-        timer.endJsonTransform()
-        
-        return QueryResponseDTO(
-            queryId = queryId,
-            success = true,
-            data = null,
-            rowCount = 0,
-            executionDurationMs = timer.getQueryExecutionDurationMs(),
-            jsonTransformDurationMs = timer.getJsonTransformDurationMs(),
-            totalDurationMs = timer.getTotalDurationMs(),
-            fileUrl = fileUrl
-        )
     }
     
     fun executeSavedQuery(

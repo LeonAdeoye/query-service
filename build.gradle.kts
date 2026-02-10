@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 plugins {
     id("org.springframework.boot") version "3.2.0"
@@ -10,10 +11,6 @@ plugins {
 
 group = "com.queryservice"
 version = "1.0.0"
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-}
 
 repositories {
     mavenCentral()
@@ -28,8 +25,6 @@ dependencies {
     
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     
     // Database Drivers
     implementation("com.oracle.database.jdbc:ojdbc11:23.3.0.23.09")
@@ -59,13 +54,12 @@ dependencies {
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
 }
 
 tasks.withType<KotlinCompile> {
     kotlinOptions {
         freeCompilerArgs += "-Xjsr305=strict"
-        jvmTarget = "17"
+        jvmTarget = "21"
     }
 }
 
@@ -73,3 +67,6 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+kotlin {
+    jvmToolchain(21)
+}
