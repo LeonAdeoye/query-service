@@ -2,9 +2,11 @@ package com.queryservice.queue
 
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.QueryServiceException
+import com.queryservice.monitoring.ExecutionTimer
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.stereotype.Component
+import reactor.core.publisher.Sinks
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
 
@@ -18,6 +20,14 @@ data class QueueConfigProperties(
     val maxQueueSize: Int = 1000
 )
 
+/**
+ * Result of a queued query execution. Carried back to the waiting caller when a worker completes.
+ */
+data class QueuedQueryResult(
+    val data: List<Map<String, Any>>,
+    val timer: ExecutionTimer
+)
+
 data class QueuedQuery(
     val id: String,
     val sql: String,
@@ -25,7 +35,11 @@ data class QueuedQuery(
     val parameters: Map<String, Any>?,
     val priority: QueryPriority,
     val timestamp: Long = System.currentTimeMillis(),
-    val sequenceNumber: Long = sequenceCounter.getAndIncrement()
+    val sequenceNumber: Long = sequenceCounter.getAndIncrement(),
+    /** When set, a worker must run the query and complete this sink with the result (or error). */
+    val resultSink: Sinks.One<QueuedQueryResult>? = null,
+    /** Timer for execution metrics; used by worker when resultSink is set. */
+    val timer: ExecutionTimer? = null
 ) : Comparable<QueuedQuery> {
     override fun compareTo(other: QueuedQuery): Int {
         val priorityCompare = priority.compareTo(other.priority)

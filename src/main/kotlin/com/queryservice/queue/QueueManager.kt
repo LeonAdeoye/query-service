@@ -6,6 +6,7 @@ import com.queryservice.monitoring.ExecutionTimer
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import reactor.core.publisher.Mono
+import reactor.core.publisher.Sinks
 import reactor.core.scheduler.Schedulers
 import java.time.Duration
 import java.util.UUID
@@ -54,10 +55,35 @@ class QueueManager(
     }
 
     private fun processQueue(priority: QueryPriority) {
-        val queuedQuery = priorityQueryQueue.dequeue()
-        if (queuedQuery != null && queuedQuery.priority == priority) {
-            logger.debug("Processing query ${queuedQuery.id} with priority ${queuedQuery.priority}")
-            val timer = ExecutionTimer()
+        val queuedQuery = priorityQueryQueue.dequeue() ?: return
+        if (queuedQuery.priority != priority) {
+            priorityQueryQueue.enqueue(queuedQuery)
+            return
+        }
+        logger.debug("Processing query ${queuedQuery.id} with priority ${queuedQuery.priority}")
+        val timer = queuedQuery.timer ?: ExecutionTimer()
+        if (queuedQuery.resultSink != null) {
+            // Caller is waiting for result: run query and complete the sink
+            try {
+                queuedQuery.timer?.startQueryExecution()
+                val result = asyncQueryExecutor.executeQueryAsync(
+                    queuedQuery.sql,
+                    queuedQuery.databaseType,
+                    queuedQuery.parameters,
+                    timer
+                ).subscribeOn(Schedulers.boundedElastic()).block()
+                if (result != null) {
+                    timer.endQueryExecution()
+                    queuedQuery.resultSink?.tryEmitValue(QueuedQueryResult(result, timer))
+                } else {
+                    queuedQuery.resultSink?.tryEmitError(IllegalStateException("Query returned null"))
+                }
+            } catch (e: Throwable) {
+                logger.error("Error executing queued query ${queuedQuery.id}", e)
+                queuedQuery.resultSink?.tryEmitError(e)
+            }
+        } else {
+            // Fire-and-forget: run in background
             asyncQueryExecutor.executeQueryAsync(
                 queuedQuery.sql,
                 queuedQuery.databaseType,
@@ -67,30 +93,32 @@ class QueueManager(
                 { },
                 { e -> logger.error("Error executing queued query ${queuedQuery.id}", e) }
             )
-        } else if (queuedQuery != null) {
-            priorityQueryQueue.enqueue(queuedQuery)
         }
     }
 
     /**
-     * Non-blocking: enqueues and runs the query on the bounded elastic scheduler, returns Mono with result.
+     * Enqueues the query with the given priority. Returns a Mono that completes when a worker
+     * processes the item and runs the query (result or error).
      */
     fun executeQueued(
         sql: String,
         databaseType: DatabaseType,
         parameters: Map<String, Any>?,
         priority: QueryPriority
-    ): Mono<List<Map<String, Any>>> {
+    ): Mono<QueuedQueryResult> {
+        val timer = ExecutionTimer()
+        val sink = Sinks.one<QueuedQueryResult>()
         val queuedQuery = QueuedQuery(
             id = UUID.randomUUID().toString(),
             sql = sql,
             databaseType = databaseType,
             parameters = parameters,
-            priority = priority
+            priority = priority,
+            resultSink = sink,
+            timer = timer
         )
         priorityQueryQueue.enqueue(queuedQuery)
-        val timer = ExecutionTimer()
-        return asyncQueryExecutor.executeQueryAsync(sql, databaseType, parameters, timer)
+        return sink.asMono()
     }
 }
 

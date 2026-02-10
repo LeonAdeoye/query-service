@@ -31,8 +31,10 @@ class QueryController(
         @RequestHeader headers: Map<String, String>
     ): Mono<ResponseEntity<QueryResponseDTO>> {
         val metadata = querySourceTracker.extractMetadataFromHeaders(headers)
-        
-        return queryService.executeQuery(request, metadata)
+        val priority = headers["X-Query-Priority"]?.uppercase()?.let { parseQueryPriority(it) } ?: request.priority
+        val requestWithPriority = request.copy(priority = priority)
+
+        return queryService.executeQuery(requestWithPriority, metadata)
             .map { ResponseEntity.ok(it) }
             .onErrorResume { error ->
                 handleError(error, "executeQuery")
@@ -46,8 +48,9 @@ class QueryController(
         @RequestHeader headers: Map<String, String>
     ): Mono<ResponseEntity<QueryResponseDTO>> {
         val metadata = querySourceTracker.extractMetadataFromHeaders(headers)
-        
-        return queryService.executeSavedQuery(queryId, parameters, metadata)
+        val priority = headers["X-Query-Priority"]?.uppercase()?.let { parseQueryPriority(it) } ?: QueryPriority.NORMAL
+
+        return queryService.executeSavedQuery(queryId, parameters, metadata, priority)
             .map { ResponseEntity.ok(it) }
             .onErrorResume { error ->
                 handleError(error, "executeSavedQuery")
@@ -116,6 +119,12 @@ class QueryController(
             }
     }
     
+    private fun parseQueryPriority(value: String): QueryPriority = when (value) {
+        "HIGH" -> QueryPriority.HIGH
+        "LOW" -> QueryPriority.LOW
+        else -> QueryPriority.NORMAL
+    }
+
     private fun <T> handleError(error: Throwable, operation: String): Mono<ResponseEntity<T>> {
         val errorCode = when (error) {
             is QueryServiceException -> error.errorCode

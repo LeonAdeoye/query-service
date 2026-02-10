@@ -13,9 +13,13 @@ import com.queryservice.execution.StreamingQueryExecutor
 import com.queryservice.export.ExportFormat
 import com.queryservice.monitoring.ExecutionTimer
 import com.queryservice.monitoring.QueryMetricsCollector
+import com.queryservice.query.LikePatternValidator
 import com.queryservice.query.ParameterResolver
 import com.queryservice.query.ParameterValidator
+import com.queryservice.queue.QueuedQueryResult
 import com.queryservice.queue.QueryPriority
+import com.queryservice.queue.QueueConfigProperties
+import com.queryservice.queue.QueueManager
 import com.queryservice.repository.QueryEntity
 import com.queryservice.repository.QueryRepository
 import com.queryservice.retry.RetryService
@@ -37,10 +41,13 @@ class QueryService(
     private val bigDataQueryExecutor: BigDataQueryExecutor,
     private val parameterResolver: ParameterResolver,
     private val parameterValidator: ParameterValidator,
+    private val likePatternValidator: LikePatternValidator,
     private val retryService: RetryService,
     private val queryMetricsCollector: QueryMetricsCollector,
     private val querySourceTracker: QuerySourceTracker,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val queueManager: QueueManager,
+    private val queueConfig: QueueConfigProperties
 ) {
     private val logger = LoggerFactory.getLogger(QueryService::class.java)
     
@@ -54,6 +61,7 @@ class QueryService(
         return Mono.fromCallable {
             parameterValidator.validateParameters(request.sql, request.parameters)
             parameterValidator.validateParameterTypes(request.parameters)
+            likePatternValidator.validateNoDoubleLikeWildcard(request.sql)
             request
         }.flatMap { req ->
             if (req.cacheEnabled) {
@@ -73,8 +81,11 @@ class QueryService(
                     )
                 }
             }
-            if (req.bigData) executeBigDataQuery(req, queryId, timer)
-            else executeRegularQuery(req, queryId, timer)
+            when {
+                req.bigData -> executeBigDataQuery(req, queryId, timer)
+                queueConfig.enabled -> executeViaQueue(req, queryId, timer)
+                else -> executeRegularQuery(req, queryId, timer)
+            }
         }.flatMap { result ->
             if (request.cacheEnabled && result.data != null) {
                 queryCacheService.put(
@@ -104,6 +115,35 @@ class QueryService(
         }
     }
     
+    /**
+     * Executes a regular (non–big-data) query via the priority queue. The request's priority
+     * (e.g. from X-Query-Priority header) determines which worker pool processes it.
+     */
+    private fun executeViaQueue(
+        request: QueryRequestDTO,
+        queryId: String,
+        timer: ExecutionTimer
+    ): Mono<QueryResponseDTO> {
+        return queueManager.executeQueued(
+            request.sql,
+            request.databaseType,
+            request.parameters,
+            request.priority
+        ).map { qr: QueuedQueryResult ->
+            timer.startJsonTransform()
+            timer.endJsonTransform()
+            QueryResponseDTO(
+                queryId = queryId,
+                success = true,
+                data = qr.data,
+                rowCount = qr.data.size,
+                executionDurationMs = qr.timer.getQueryExecutionDurationMs(),
+                jsonTransformDurationMs = timer.getJsonTransformDurationMs(),
+                totalDurationMs = timer.getTotalDurationMs()
+            )
+        }
+    }
+
     private fun executeRegularQuery(
         request: QueryRequestDTO,
         queryId: String,
@@ -167,7 +207,8 @@ class QueryService(
     fun executeSavedQuery(
         queryId: String,
         parameters: Map<String, Any>?,
-        metadata: QueryMetadata
+        metadata: QueryMetadata,
+        priority: QueryPriority = QueryPriority.NORMAL
     ): Mono<QueryResponseDTO> {
         val queryEntity = queryRepository.findById(queryId)
             .orElseThrow {
@@ -176,13 +217,14 @@ class QueryService(
                     "Query not found: $queryId"
                 )
             }
-        
+
         val request = QueryRequestDTO(
             sql = queryEntity.sql,
             databaseType = queryEntity.databaseType,
-            parameters = parameters
+            parameters = parameters,
+            priority = priority
         )
-        
+
         return executeQuery(request, metadata)
     }
     
@@ -196,7 +238,8 @@ class QueryService(
         // Validate parameters
         parameterValidator.validateParameters(request.sql, request.parameters)
         parameterValidator.validateParameterTypes(request.parameters)
-        
+        likePatternValidator.validateNoDoubleLikeWildcard(request.sql)
+
         return streamingQueryExecutor.streamQuery(
             request.sql,
             request.databaseType,

@@ -23,6 +23,7 @@ class ErrorCodeRegistry {
         ErrorCodes.JSON_TRANSFORMATION_ERROR to "JSON transformation error",
         ErrorCodes.PARAMETER_VALIDATION_ERROR to "Parameter validation error",
         ErrorCodes.CONNECTION_POOL_EXHAUSTED to "Connection pool exhausted",
+        ErrorCodes.LIKE_DOUBLE_WILDCARD_NOT_ALLOWED to "LIKE with two or more % wildcards is not allowed",
         ErrorCodes.UNKNOWN_ERROR to "Unknown error occurred"
     )
     
