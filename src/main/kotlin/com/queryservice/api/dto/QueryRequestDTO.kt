@@ -1,6 +1,5 @@
 package com.queryservice.api.dto
 
-import com.queryservice.database.DatabaseType
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 
@@ -8,8 +7,8 @@ data class QueryRequestDTO(
     @field:NotBlank(message = "SQL query is required")
     val sql: String,
     
-    @field:NotNull(message = "Database type is required")
-    val databaseType: DatabaseType,
+    @field:NotBlank(message = "Datasource id is required")
+    val datasourceId: String,
     
     val parameters: Map<String, Any>? = null,
     

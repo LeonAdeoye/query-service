@@ -1,6 +1,7 @@
 package com.queryservice.execution
 
 import com.queryservice.database.ConnectionPoolManager
+import com.queryservice.database.DatasourceRegistry
 import com.queryservice.database.DatabaseType
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.QueryServiceException
@@ -13,17 +14,19 @@ import java.sql.ResultSetMetaData
 @Component
 class QueryExecutor(
     private val connectionPoolManager: ConnectionPoolManager,
+    private val datasourceRegistry: DatasourceRegistry,
     private val parameterResolver: ParameterResolver
 ) {
     private val logger = LoggerFactory.getLogger(QueryExecutor::class.java)
-    
+
     fun executeQuery(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?
     ): List<Map<String, Any>> {
-        val connection = connectionPoolManager.getConnection(databaseType)
-        
+        val connection = connectionPoolManager.getConnection(datasourceId)
+        val databaseType = datasourceRegistry.getDatabaseType(datasourceId)
+
         try {
             val (resolvedSql, paramValues) = parameterResolver.resolveParameters(sql, parameters, databaseType)
             

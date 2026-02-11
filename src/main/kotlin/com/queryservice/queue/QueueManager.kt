@@ -1,6 +1,6 @@
 package com.queryservice.queue
 
-import com.queryservice.database.DatabaseType
+import com.queryservice.api.dto.QueryPriority
 import com.queryservice.execution.AsyncQueryExecutor
 import com.queryservice.monitoring.ExecutionTimer
 import org.slf4j.LoggerFactory
@@ -68,7 +68,7 @@ class QueueManager(
                 queuedQuery.timer?.startQueryExecution()
                 val result = asyncQueryExecutor.executeQueryAsync(
                     queuedQuery.sql,
-                    queuedQuery.databaseType,
+                    queuedQuery.datasourceId,
                     queuedQuery.parameters,
                     timer
                 ).subscribeOn(Schedulers.boundedElastic()).block()
@@ -86,7 +86,7 @@ class QueueManager(
             // Fire-and-forget: run in background
             asyncQueryExecutor.executeQueryAsync(
                 queuedQuery.sql,
-                queuedQuery.databaseType,
+                queuedQuery.datasourceId,
                 queuedQuery.parameters,
                 timer
             ).subscribeOn(Schedulers.boundedElastic()).subscribe(
@@ -102,7 +102,7 @@ class QueueManager(
      */
     fun executeQueued(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?,
         priority: QueryPriority
     ): Mono<QueuedQueryResult> {
@@ -111,7 +111,7 @@ class QueueManager(
         val queuedQuery = QueuedQuery(
             id = UUID.randomUUID().toString(),
             sql = sql,
-            databaseType = databaseType,
+            datasourceId = datasourceId,
             parameters = parameters,
             priority = priority,
             resultSink = sink,

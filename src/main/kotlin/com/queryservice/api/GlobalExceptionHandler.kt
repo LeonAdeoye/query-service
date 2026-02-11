@@ -24,7 +24,8 @@ class GlobalExceptionHandler(
             ErrorCodes.INVALID_QUERY_REQUEST,
             ErrorCodes.INVALID_PARAMETERS,
             ErrorCodes.PARAMETER_VALIDATION_ERROR,
-            ErrorCodes.LIKE_DOUBLE_WILDCARD_NOT_ALLOWED -> HttpStatus.BAD_REQUEST
+            ErrorCodes.LIKE_DOUBLE_WILDCARD_NOT_ALLOWED,
+            ErrorCodes.DATASOURCE_NOT_FOUND -> HttpStatus.BAD_REQUEST
             ErrorCodes.QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE
             else -> HttpStatus.INTERNAL_SERVER_ERROR
         }

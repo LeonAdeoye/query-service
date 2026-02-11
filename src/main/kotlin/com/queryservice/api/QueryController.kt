@@ -62,24 +62,23 @@ class QueryController(
         @PathVariable queryId: String,
         @RequestParam(required = false, defaultValue = "100") pageSize: Int,
         @RequestParam(required = false) sql: String?,
-        @RequestParam(required = false) databaseType: com.queryservice.database.DatabaseType?,
+        @RequestParam(required = false) datasourceId: String?,
         @RequestParam(required = false) parameters: Map<String, Any>?,
         @RequestHeader headers: Map<String, String>
     ): Flux<ServerSentEvent<Map<String, Any>>> {
         val metadata = querySourceTracker.extractMetadataFromHeaders(headers)
-        
-        val request = if (sql != null && databaseType != null) {
+
+        val request = if (sql != null && datasourceId != null) {
             QueryRequestDTO(
                 sql = sql,
-                databaseType = databaseType,
+                datasourceId = datasourceId,
                 parameters = parameters
             )
         } else {
-            // Get saved query
             val savedQuery = queryService.getQuery(queryId)
             QueryRequestDTO(
                 sql = savedQuery.sql,
-                databaseType = savedQuery.databaseType,
+                datasourceId = savedQuery.datasourceId,
                 parameters = parameters
             )
         }
@@ -137,7 +136,9 @@ class QueryController(
             ErrorCodes.QUERY_NOT_FOUND -> HttpStatus.NOT_FOUND
             ErrorCodes.INVALID_QUERY_REQUEST,
             ErrorCodes.INVALID_PARAMETERS,
-            ErrorCodes.PARAMETER_VALIDATION_ERROR -> HttpStatus.BAD_REQUEST
+            ErrorCodes.PARAMETER_VALIDATION_ERROR,
+            ErrorCodes.LIKE_DOUBLE_WILDCARD_NOT_ALLOWED,
+            ErrorCodes.DATASOURCE_NOT_FOUND -> HttpStatus.BAD_REQUEST
             ErrorCodes.QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE
             else -> HttpStatus.INTERNAL_SERVER_ERROR
         }

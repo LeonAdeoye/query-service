@@ -1,6 +1,5 @@
 package com.queryservice.cache
 
-import com.queryservice.database.DatabaseType
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.ErrorCodeRegistry
 import com.queryservice.error.QueryServiceException
@@ -19,12 +18,12 @@ class QueryCacheService(
     
     fun get(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?
     ): List<Map<String, Any>>? {
         return try {
             val cache: Cache? = cacheManager.getCache("queryResults")
-            val key = cacheKeyGenerator.generateKey(sql, databaseType, parameters)
+            val key = cacheKeyGenerator.generateKey(sql, datasourceId, parameters)
             val cached = cache?.get(key)
             if (cached != null) {
                 logger.debug("Cache hit for key: $key")
@@ -42,14 +41,14 @@ class QueryCacheService(
     
     fun put(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?,
         result: List<Map<String, Any>>,
         ttlSeconds: Long? = null
     ) {
         try {
             val cache: Cache? = cacheManager.getCache("queryResults")
-            val key = cacheKeyGenerator.generateKey(sql, databaseType, parameters)
+            val key = cacheKeyGenerator.generateKey(sql, datasourceId, parameters)
             cache?.put(key, result)
             logger.debug("Cached result for key: $key")
         } catch (e: Exception) {
@@ -60,12 +59,12 @@ class QueryCacheService(
     
     fun evict(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?
     ) {
         try {
             val cache: Cache? = cacheManager.getCache("queryResults")
-            val key = cacheKeyGenerator.generateKey(sql, databaseType, parameters)
+            val key = cacheKeyGenerator.generateKey(sql, datasourceId, parameters)
             cache?.evict(key)
             logger.debug("Evicted cache for key: $key")
         } catch (e: Exception) {

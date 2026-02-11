@@ -2,62 +2,43 @@ package com.queryservice.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.stereotype.Component
-
-@Component
-@ConfigurationProperties(prefix = "query-service.databases")
-data class DatabaseConfigProperties(
-    val oracle: DatabaseConnectionConfig = DatabaseConnectionConfig(),
-    val mssql: DatabaseConnectionConfig = DatabaseConnectionConfig()
-)
-
-data class DatabaseConnectionConfig(
-    val jdbcUrl: String = "",
-    val username: String = "",
-    val password: String = "",
-    val pool: PoolConfig = PoolConfig()
-)
 
 @Configuration
 class DatabaseConfig(
-    private val databaseConfigProperties: DatabaseConfigProperties
+    private val datasourceConfigProperties: DatasourceConfigProperties
 ) {
-    
-    @Bean("oracleDataSource")
-    fun oracleDataSource(): HikariDataSource {
-        val config = HikariConfig().apply {
-            jdbcUrl = databaseConfigProperties.oracle.jdbcUrl
-            username = databaseConfigProperties.oracle.username
-            password = databaseConfigProperties.oracle.password
-            driverClassName = "oracle.jdbc.OracleDriver"
-            maximumPoolSize = databaseConfigProperties.oracle.pool.maximumPoolSize
-            minimumIdle = databaseConfigProperties.oracle.pool.minimumIdle
-            connectionTimeout = databaseConfigProperties.oracle.pool.connectionTimeout
-            idleTimeout = databaseConfigProperties.oracle.pool.idleTimeout
-            maxLifetime = databaseConfigProperties.oracle.pool.maxLifetime
-            poolName = "OraclePool"
+
+    @Bean("queryServiceDataSources")
+    fun dataSourceMap(): Map<String, HikariDataSource> {
+        val map = mutableMapOf<String, HikariDataSource>()
+        for (entry in datasourceConfigProperties.datasources) {
+            if (entry.id.isBlank()) continue
+            val ds = createDataSource(entry)
+            map[entry.id] = ds
         }
-        return HikariDataSource(config)
+        return map
     }
-    
-    @Bean("mssqlDataSource")
-    fun mssqlDataSource(): HikariDataSource {
+
+    private fun createDataSource(entry: DatasourceEntry): HikariDataSource {
+        val driverClassName = when (entry.vendor.lowercase()) {
+            "oracle" -> "oracle.jdbc.OracleDriver"
+            "mssql" -> "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+            else -> throw IllegalArgumentException("Unsupported datasource vendor: ${entry.vendor}")
+        }
         val config = HikariConfig().apply {
-            jdbcUrl = databaseConfigProperties.mssql.jdbcUrl
-            username = databaseConfigProperties.mssql.username
-            password = databaseConfigProperties.mssql.password
-            driverClassName = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
-            maximumPoolSize = databaseConfigProperties.mssql.pool.maximumPoolSize
-            minimumIdle = databaseConfigProperties.mssql.pool.minimumIdle
-            connectionTimeout = databaseConfigProperties.mssql.pool.connectionTimeout
-            idleTimeout = databaseConfigProperties.mssql.pool.idleTimeout
-            maxLifetime = databaseConfigProperties.mssql.pool.maxLifetime
-            poolName = "MsSqlPool"
+            setJdbcUrl(entry.jdbcUrl)
+            username = entry.username
+            password = entry.password
+            setDriverClassName(driverClassName)
+            maximumPoolSize = entry.pool.maximumPoolSize
+            minimumIdle = entry.pool.minimumIdle
+            connectionTimeout = entry.pool.connectionTimeout
+            idleTimeout = entry.pool.idleTimeout
+            maxLifetime = entry.pool.maxLifetime
+            poolName = "Pool-${entry.id}"
         }
         return HikariDataSource(config)
     }
 }
-

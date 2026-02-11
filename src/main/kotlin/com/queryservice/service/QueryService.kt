@@ -3,7 +3,7 @@ package com.queryservice.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.queryservice.api.dto.*
 import com.queryservice.cache.QueryCacheService
-import com.queryservice.database.DatabaseType
+import com.queryservice.database.DatasourceRegistry
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.ErrorCodeRegistry
 import com.queryservice.error.QueryServiceException
@@ -17,7 +17,7 @@ import com.queryservice.query.LikePatternValidator
 import com.queryservice.query.ParameterResolver
 import com.queryservice.query.ParameterValidator
 import com.queryservice.queue.QueuedQueryResult
-import com.queryservice.queue.QueryPriority
+import com.queryservice.api.dto.QueryPriority
 import com.queryservice.queue.QueueConfigProperties
 import com.queryservice.queue.QueueManager
 import com.queryservice.repository.QueryEntity
@@ -47,7 +47,8 @@ class QueryService(
     private val querySourceTracker: QuerySourceTracker,
     private val objectMapper: ObjectMapper,
     private val queueManager: QueueManager,
-    private val queueConfig: QueueConfigProperties
+    private val queueConfig: QueueConfigProperties,
+    private val datasourceRegistry: DatasourceRegistry
 ) {
     private val logger = LoggerFactory.getLogger(QueryService::class.java)
     
@@ -62,10 +63,16 @@ class QueryService(
             parameterValidator.validateParameters(request.sql, request.parameters)
             parameterValidator.validateParameterTypes(request.parameters)
             likePatternValidator.validateNoDoubleLikeWildcard(request.sql)
+            if (!datasourceRegistry.isValid(request.datasourceId)) {
+                throw QueryServiceException(
+                    com.queryservice.error.ErrorCodes.DATASOURCE_NOT_FOUND,
+                    "Unknown datasource id: ${request.datasourceId}. Valid ids: ${datasourceRegistry.getValidIds().sorted().joinToString()}"
+                )
+            }
             request
         }.flatMap { req ->
             if (req.cacheEnabled) {
-                val cached = queryCacheService.get(req.sql, req.databaseType, req.parameters)
+                val cached = queryCacheService.get(req.sql, req.datasourceId, req.parameters)
                 if (cached != null) {
                     timer.endJsonTransform()
                     return@flatMap Mono.just(
@@ -90,7 +97,7 @@ class QueryService(
             if (request.cacheEnabled && result.data != null) {
                 queryCacheService.put(
                     request.sql,
-                    request.databaseType,
+                    request.datasourceId,
                     request.parameters,
                     result.data,
                     request.cacheTtlSeconds
@@ -126,7 +133,7 @@ class QueryService(
     ): Mono<QueryResponseDTO> {
         return queueManager.executeQueued(
             request.sql,
-            request.databaseType,
+            request.datasourceId,
             request.parameters,
             request.priority
         ).map { qr: QueuedQueryResult ->
@@ -153,7 +160,7 @@ class QueryService(
         return retryService.executeWithRetry(
             asyncQueryExecutor.executeQueryAsync(
                 request.sql,
-                request.databaseType,
+                request.datasourceId,
                 request.parameters,
                 timer
             )
@@ -184,7 +191,7 @@ class QueryService(
         return retryService.executeWithRetry(
             bigDataQueryExecutor.executeBigDataQuery(
                 request.sql,
-                request.databaseType,
+                request.datasourceId,
                 request.parameters,
                 exportFormat
             )
@@ -220,7 +227,7 @@ class QueryService(
 
         val request = QueryRequestDTO(
             sql = queryEntity.sql,
-            databaseType = queryEntity.databaseType,
+            datasourceId = queryEntity.datasourceId,
             parameters = parameters,
             priority = priority
         )
@@ -234,15 +241,20 @@ class QueryService(
         metadata: QueryMetadata
     ): Flux<Map<String, Any>> {
         val queryId = request.queryId ?: UUID.randomUUID().toString()
-        
-        // Validate parameters
+
         parameterValidator.validateParameters(request.sql, request.parameters)
         parameterValidator.validateParameterTypes(request.parameters)
         likePatternValidator.validateNoDoubleLikeWildcard(request.sql)
+        if (!datasourceRegistry.isValid(request.datasourceId)) {
+            throw QueryServiceException(
+                com.queryservice.error.ErrorCodes.DATASOURCE_NOT_FOUND,
+                "Unknown datasource id: ${request.datasourceId}. Valid ids: ${datasourceRegistry.getValidIds().sorted().joinToString()}"
+            )
+        }
 
         return streamingQueryExecutor.streamQuery(
             request.sql,
-            request.databaseType,
+            request.datasourceId,
             request.parameters,
             pageSize
         ).doOnError { error ->
@@ -263,7 +275,7 @@ class QueryService(
         val queryEntity = QueryEntity(
             name = request.name,
             sql = request.sql,
-            databaseType = request.databaseType,
+            datasourceId = request.datasourceId,
             parametersSchema = if (request.parametersSchema != null) {
                 objectMapper.writeValueAsString(request.parametersSchema)
             } else null,

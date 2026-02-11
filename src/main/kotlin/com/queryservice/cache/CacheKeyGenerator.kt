@@ -1,6 +1,5 @@
 package com.queryservice.cache
 
-import com.queryservice.database.DatabaseType
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Component
 import java.security.MessageDigest
@@ -9,15 +8,15 @@ import java.security.MessageDigest
 class CacheKeyGenerator(
     private val objectMapper: ObjectMapper
 ) {
-    
+
     fun generateKey(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?
     ): String {
         val keyData = mapOf(
             "sql" to sql,
-            "databaseType" to databaseType.name,
+            "datasourceId" to datasourceId,
             "parameters" to (parameters ?: emptyMap())
         )
         

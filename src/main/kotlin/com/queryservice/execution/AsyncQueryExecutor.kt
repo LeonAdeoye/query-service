@@ -1,6 +1,5 @@
 package com.queryservice.execution
 
-import com.queryservice.database.DatabaseType
 import com.queryservice.monitoring.ExecutionTimer
 import org.springframework.stereotype.Component
 import reactor.core.publisher.Mono
@@ -16,14 +15,14 @@ class AsyncQueryExecutor(
      */
     fun executeQueryAsync(
         sql: String,
-        databaseType: DatabaseType,
+        datasourceId: String,
         parameters: Map<String, Any>?,
         timer: ExecutionTimer
     ): Mono<List<Map<String, Any>>> {
         return Mono.fromCallable {
             timer.startQueryExecution()
             try {
-                queryExecutor.executeQuery(sql, databaseType, parameters)
+                queryExecutor.executeQuery(sql, datasourceId, parameters)
             } finally {
                 timer.endQueryExecution()
             }

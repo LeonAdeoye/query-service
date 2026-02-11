@@ -1,5 +1,6 @@
 package com.queryservice.queue
 
+import com.queryservice.api.dto.QueryPriority
 import com.queryservice.error.ErrorCodes
 import com.queryservice.error.QueryServiceException
 import com.queryservice.monitoring.ExecutionTimer
@@ -31,7 +32,7 @@ data class QueuedQueryResult(
 data class QueuedQuery(
     val id: String,
     val sql: String,
-    val databaseType: com.queryservice.database.DatabaseType,
+    val datasourceId: String,
     val parameters: Map<String, Any>?,
     val priority: QueryPriority,
     val timestamp: Long = System.currentTimeMillis(),

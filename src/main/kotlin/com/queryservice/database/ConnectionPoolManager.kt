@@ -4,38 +4,41 @@ import com.queryservice.error.ErrorCodes
 import com.queryservice.error.QueryServiceException
 import com.zaxxer.hikari.HikariDataSource
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import java.sql.Connection
 
 @Component
 class ConnectionPoolManager(
-    private val oracleDataSource: HikariDataSource,
-    private val mssqlDataSource: HikariDataSource
+    @Qualifier("queryServiceDataSources") private val dataSources: Map<String, HikariDataSource>
 ) {
     private val logger = LoggerFactory.getLogger(ConnectionPoolManager::class.java)
-    
-    fun getConnection(databaseType: DatabaseType): Connection {
+
+    fun getConnection(datasourceId: String): Connection {
+        val ds = dataSources[datasourceId]
+            ?: throw QueryServiceException(
+                ErrorCodes.DATASOURCE_NOT_FOUND,
+                "Unknown datasource id: $datasourceId. Valid ids: ${dataSources.keys.sorted().joinToString()}"
+            )
         return try {
-            when (databaseType) {
-                DatabaseType.ORACLE -> oracleDataSource.connection
-                DatabaseType.MSSQL -> mssqlDataSource.connection
-            }
+            ds.connection
         } catch (e: Exception) {
-            logger.error("Failed to get connection for database type: $databaseType", e)
+            logger.error("Failed to get connection for datasource: $datasourceId", e)
             throw QueryServiceException(
                 ErrorCodes.DATABASE_CONNECTION_FAILURE,
-                "Failed to get connection for ${databaseType.name}",
+                "Failed to get connection for $datasourceId",
                 e
             )
         }
     }
-    
-    fun getPoolStats(databaseType: DatabaseType): PoolStats {
-        val pool = when (databaseType) {
-            DatabaseType.ORACLE -> oracleDataSource.hikariPoolMXBean
-            DatabaseType.MSSQL -> mssqlDataSource.hikariPoolMXBean
-        }
-        
+
+    fun getPoolStats(datasourceId: String): PoolStats {
+        val ds = dataSources[datasourceId]
+            ?: throw QueryServiceException(
+                ErrorCodes.DATASOURCE_NOT_FOUND,
+                "Unknown datasource id: $datasourceId"
+            )
+        val pool = ds.hikariPoolMXBean
         return PoolStats(
             activeConnections = pool?.activeConnections ?: 0,
             idleConnections = pool?.idleConnections ?: 0,
@@ -43,12 +46,12 @@ class ConnectionPoolManager(
             threadsAwaitingConnection = pool?.threadsAwaitingConnection ?: 0
         )
     }
-    
-    fun healthCheck(databaseType: DatabaseType): Boolean {
+
+    fun healthCheck(datasourceId: String): Boolean {
         return try {
-            getConnection(databaseType).use { it.isValid(5) }
+            getConnection(datasourceId).use { it.isValid(5) }
         } catch (e: Exception) {
-            logger.error("Health check failed for $databaseType", e)
+            logger.error("Health check failed for datasource $datasourceId", e)
             false
         }
     }
@@ -60,4 +63,3 @@ data class PoolStats(
     val totalConnections: Int,
     val threadsAwaitingConnection: Int
 )
-

@@ -17,6 +17,7 @@ object ErrorCodes {
     const val PARAMETER_VALIDATION_ERROR = "QRS-ERR-014"
     const val CONNECTION_POOL_EXHAUSTED = "QRS-ERR-015"
     const val LIKE_DOUBLE_WILDCARD_NOT_ALLOWED = "QRS-ERR-016"
+    const val DATASOURCE_NOT_FOUND = "QRS-ERR-017"
     const val UNKNOWN_ERROR = "QRS-ERR-568"
 }
 

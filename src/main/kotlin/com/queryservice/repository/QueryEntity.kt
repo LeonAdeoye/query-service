@@ -1,6 +1,5 @@
 package com.queryservice.repository
 
-import com.queryservice.database.DatabaseType
 import jakarta.persistence.*
 import java.time.Instant
 import java.util.UUID
@@ -16,8 +15,7 @@ data class QueryEntity(
     @Column(columnDefinition = "TEXT")
     val sql: String,
     
-    @Enumerated(EnumType.STRING)
-    val databaseType: DatabaseType,
+    val datasourceId: String,
     
     @Column(columnDefinition = "TEXT")
     val parametersSchema: String? = null,
